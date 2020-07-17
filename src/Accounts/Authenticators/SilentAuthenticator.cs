@@ -14,9 +14,14 @@
 
 using System;
 using System.Linq;
+using System.Net.Http.Headers;
 using System.Security;
 using System.Threading;
 using System.Threading.Tasks;
+
+using Azure.Core;
+using Azure.Identity;
+
 using Hyak.Common;
 using Microsoft.Azure.Commands.Common.Authentication;
 using Microsoft.Azure.Commands.Common.Authentication.Abstractions;
@@ -33,19 +38,31 @@ namespace Microsoft.Azure.PowerShell.Authenticators
             var authenticationClientFactory = silentParameters.AuthenticationClientFactory;
             var resource = silentParameters.Environment.GetEndpoint(silentParameters.ResourceId) ?? silentParameters.ResourceId;
             var scopes = AuthenticationHelpers.GetScope(onPremise, resource);
-            var clientId = AuthenticationHelpers.PowerShellClientId;
+            //var clientId = AuthenticationHelpers.PowerShellClientId;
             var authority = onPremise ?
                                 silentParameters.Environment.ActiveDirectoryAuthority :
                                 AuthenticationHelpers.GetAuthority(silentParameters.Environment, silentParameters.TenantId);
-            TracingAdapter.Information(string.Format("[SilentAuthenticator] Creating IPublicClientApplication - ClientId: '{0}', Authority: '{1}', UseAdfs: '{2}'", clientId, authority, onPremise));
-            var publicClient = authenticationClientFactory.CreatePublicClient(clientId: clientId, authority: authority, useAdfs: onPremise);
-            TracingAdapter.Information(string.Format("[SilentAuthenticator] Calling GetAccountsAsync"));
-            var accounts = publicClient.GetAccountsAsync()
-                .ConfigureAwait(false).GetAwaiter().GetResult();
-            TracingAdapter.Information(string.Format("[SilentAuthenticator] Calling AcquireTokenSilent - Scopes: '{0}', UserId: '{1}', Number of accounts: '{2}'", string.Join(",", scopes), silentParameters.UserId, accounts.Count()));
-            var response = publicClient.AcquireTokenSilent(scopes, accounts.FirstOrDefault(a => a.Username == silentParameters.UserId)).ExecuteAsync(cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
-            return AuthenticationResultToken.GetAccessTokenAsync(response);
+
+            var options = new SharedTokenCacheCredentialOptions()
+            {
+                Username = silentParameters.UserId,
+                AuthorityHost = new Uri(authority),
+            };
+
+            var cacheCredential = new SharedTokenCacheCredential(options);
+            var requestContext = new TokenRequestContext(scopes);
+            var tokenTask = cacheCredential.GetTokenAsync(requestContext);
+            return MsalAccessToken.GetAccessTokenAsync(tokenTask);
+
+            //TracingAdapter.Information(string.Format("[SilentAuthenticator] Creating IPublicClientApplication - ClientId: '{0}', Authority: '{1}', UseAdfs: '{2}'", clientId, authority, onPremise));
+            //var publicClient = authenticationClientFactory.CreatePublicClient(clientId: clientId, authority: authority, useAdfs: onPremise);
+            //TracingAdapter.Information(string.Format("[SilentAuthenticator] Calling GetAccountsAsync"));
+            //var accounts = publicClient.GetAccountsAsync()
+            //    .ConfigureAwait(false).GetAwaiter().GetResult();
+            //TracingAdapter.Information(string.Format("[SilentAuthenticator] Calling AcquireTokenSilent - Scopes: '{0}', UserId: '{1}', Number of accounts: '{2}'", string.Join(",", scopes), silentParameters.UserId, accounts.Count()));
+            //var response = publicClient.AcquireTokenSilent(scopes, accounts.FirstOrDefault(a => a.Username == silentParameters.UserId)).ExecuteAsync(cancellationToken);
+            //cancellationToken.ThrowIfCancellationRequested();
+            //return AuthenticationResultToken.GetAccessTokenAsync(response);
         }
 
         public override bool CanAuthenticate(AuthenticationParameters parameters)
@@ -53,4 +70,10 @@ namespace Microsoft.Azure.PowerShell.Authenticators
             return (parameters as SilentParameters) != null;
         }
     }
+
+    //public struct MsalAccessToken : AccessToken
+    //{
+    //    public IAccount Account { get; }
+    //    public string TenantId { get; }
+    //}
 }

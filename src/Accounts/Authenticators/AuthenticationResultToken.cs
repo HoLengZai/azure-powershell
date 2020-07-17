@@ -12,7 +12,11 @@
 // limitations under the License.
 // ----------------------------------------------------------------------------------
 
+using Azure.Core;
+using Azure.Identity;
+
 using Microsoft.Azure.Commands.Common.Authentication;
+using Microsoft.Azure.Management.Internal.Network.Version2017_10_01.Models;
 using Microsoft.Identity.Client;
 using System;
 using System.Threading.Tasks;
@@ -73,6 +77,37 @@ namespace Microsoft.Azure.PowerShell.Authenticators
         public static IAccessToken GetAccessToken(AuthenticationResult result, string userId = null, string tenantId = null)
         {
             return new AuthenticationResultToken(result, userId, tenantId);
+        }
+    }
+
+    public class MsalAccessToken : IAccessToken
+    {
+        public string AccessToken { get; }
+
+        public string UserId { get; }
+
+        public string TenantId { get; }
+
+        public string LoginType => "User";
+
+        public MsalAccessToken(string token, string tenantId, string userId = null)
+        {
+            AccessToken = token;
+            UserId = userId;
+            TenantId = tenantId;
+        }
+
+        public void AuthorizeRequest(Action<string, string> authTokenSetter)
+        {
+            //var header = _result.CreateAuthorizationHeader();
+            authTokenSetter("Bearer", AccessToken);
+        }
+
+        public static async Task<IAccessToken> GetAccessTokenAsync(ValueTask<AccessToken> result, string tenantId = null, string userId = null)
+        {
+            var token = await result;
+            //TODO: remove eriwan after Azure.Identity change
+            return new MsalAccessToken(token.Token, tenantId, userId);//?? "eriwan@microsoft.com");
         }
     }
 }
